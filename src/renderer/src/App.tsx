@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { TerminalPane } from './components/TerminalPane'
-import type { InitPayload, SessionInfo, WindowSize } from '../../preload/api'
-
-type LayoutMode = 'split' | 'chat' | 'term'
+import type { InitPayload, WindowSize } from '../../preload/api'
 
 const MIN_RATIO = 0.2
 const MAX_RATIO = 0.8
@@ -18,15 +16,14 @@ const normalizeModel = (m: string): string =>
 
 export default function App(): React.JSX.Element {
   const [init, setInit] = useState<InitPayload | null>(null)
-  const [layout, setLayout] = useState<LayoutMode>('split')
+  const [chatOpen, setChatOpen] = useState(false)
   const [ratio, setRatio] = useState(0.46)
   const [folder, setFolder] = useState<string | null>(null)
   const [running, setRunning] = useState(false)
-  const [status, setStatus] = useState('选择一个文件夹,启动内嵌 Claude Code;左侧网页聊天处理简单问题。')
+  const [status, setStatus] = useState('选择一个文件夹,启动内嵌 Claude Code;需要网页聊天时点右上角"网页窗口"。')
   const [chatUrl, setChatUrl] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [model, setModel] = useState('opus')
-  const [sessions, setSessions] = useState<SessionInfo[]>([])
 
   const bodyRef = useRef<HTMLDivElement>(null)
   const chatPlaceholderRef = useRef<HTMLDivElement>(null)
@@ -35,13 +32,13 @@ export default function App(): React.JSX.Element {
   const syncChatBounds = useCallback((): void => {
     const placeholder = chatPlaceholderRef.current
     if (!placeholder) return
-    if (layout === 'term') {
+    if (!chatOpen) {
       window.cc.setChatBounds(null)
       return
     }
     const rect = placeholder.getBoundingClientRect()
     window.cc.setChatBounds({ x: rect.x, y: rect.y, width: rect.width, height: rect.height })
-  }, [layout])
+  }, [chatOpen])
 
   useEffect(() => {
     void window.cc.getInit().then((payload) => {
@@ -65,7 +62,7 @@ export default function App(): React.JSX.Element {
       window.removeEventListener('resize', syncChatBounds)
       ro?.disconnect()
     }
-  }, [syncChatBounds, ratio, layout, settingsOpen])
+  }, [syncChatBounds, ratio, chatOpen, settingsOpen])
 
   useEffect(() => {
     return window.cc.onPty((ev) => {
@@ -88,7 +85,6 @@ export default function App(): React.JSX.Element {
     setFolder(picked)
     const m = normalizeModel(init?.folderModels[picked] ?? 'opus')
     setModel(m)
-    void window.cc.listSessions(picked).then(setSessions)
     const recent = await window.cc.addRecent(picked)
     setInit((prev) => (prev ? { ...prev, recentFolders: recent } : prev))
     setStatus(`正在启动 claude → ${picked}`)
@@ -101,7 +97,6 @@ export default function App(): React.JSX.Element {
       setFolder(f)
       const m = normalizeModel(init?.folderModels[f] ?? 'opus')
       setModel(m)
-      void window.cc.listSessions(f).then(setSessions)
       setStatus(`正在启动 claude → ${f}`)
       const result = await window.cc.startClaude(f, { model: m })
       if (!result.ok) setStatus(result.message)
@@ -124,20 +119,6 @@ export default function App(): React.JSX.Element {
     },
     [folder, running]
   )
-
-  const resumeSession = useCallback(
-    (id: string): void => {
-      if (!folder) return
-      setStatus(`恢复会话 ${id.slice(0, 8)}…`)
-      void window.cc.startClaude(folder, { resumeId: id, model })
-    },
-    [folder, model]
-  )
-
-  const changeWindowSize = useCallback((size: WindowSize): void => {
-    setInit((prev) => (prev ? { ...prev, windowSize: size } : prev))
-    void window.cc.setWindowSize(size)
-  }, [])
 
   const applyChatUrl = useCallback((): void => {
     void window.cc.setChatUrl(chatUrl).then((result) => {
@@ -167,8 +148,6 @@ export default function App(): React.JSX.Element {
     window.addEventListener('mouseup', onUp)
   }, [])
 
-  const chatWidth = layout === 'chat' ? '100%' : layout === 'term' ? '0' : `${ratio * 100}%`
-
   return (
     <div className="app">
       <header>
@@ -196,23 +175,9 @@ export default function App(): React.JSX.Element {
           </select>
         )}
         <span className="spacer" />
-        <div className="layout-toggle">
-          {(
-            [
-              ['split', '双栏'],
-              ['chat', '聊天'],
-              ['term', '终端']
-            ] as const
-          ).map(([mode, label]) => (
-            <button
-              key={mode}
-              className={`btn toggle ${layout === mode ? 'active' : ''}`}
-              onClick={() => setLayout(mode)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <button className="btn" onClick={() => setChatOpen(!chatOpen)}>
+          {chatOpen ? '关闭网页' : '网页窗口'}
+        </button>
         <button
           className={`btn gear ${settingsOpen ? 'active' : ''}`}
           title="设置"
@@ -229,7 +194,11 @@ export default function App(): React.JSX.Element {
             <select
               className="select"
               value={init?.windowSize ?? 'medium'}
-              onChange={(e) => changeWindowSize(e.target.value as WindowSize)}
+              onChange={(e) => {
+                const size = e.target.value as WindowSize
+                setInit((prev) => (prev ? { ...prev, windowSize: size } : prev))
+                void window.cc.setWindowSize(size)
+              }}
             >
               <option value="small">小</option>
               <option value="medium">中</option>
@@ -251,71 +220,39 @@ export default function App(): React.JSX.Element {
           <button className="btn" onClick={applyChatUrl}>
             应用
           </button>
-          <span className="settings-note">登录状态按域名分别记忆,改 URL 不影响已登录的站</span>
         </div>
       )}
 
       <div className="body" ref={bodyRef}>
-        <section
-          className="pane chat-pane"
-          style={{ flexBasis: chatWidth, display: layout === 'term' ? 'none' : 'flex' }}
-        >
-          <div className="chat-placeholder" ref={chatPlaceholderRef}>
-            <div className="chat-hint">网页聊天加载中…</div>
-          </div>
-        </section>
-        {layout === 'split' && <div className="divider" onMouseDown={onDividerMouseDown} />}
-        <section className="pane term-pane" style={{ display: layout === 'chat' ? 'none' : 'flex' }}>
+        {chatOpen && (
+          <>
+            <section className="pane chat-pane" style={{ flexBasis: `${ratio * 100}%` }}>
+              <div className="chat-placeholder" ref={chatPlaceholderRef}>
+                <div className="chat-hint">网页聊天加载中…</div>
+              </div>
+            </section>
+            <div className="divider" onMouseDown={onDividerMouseDown} />
+          </>
+        )}
+        <section className="pane term-pane">
           <div className="term-header">
             <span className="cwd" title={folder ?? ''}>
               {folder ?? '未选择文件夹'}
             </span>
             <span className={`pill ${running ? 'on' : ''}`}>{running ? '运行中' : '未运行'}</span>
-            <span className="spacer" />
             {folder && (
-              <>
-                <select
-                  className="select"
-                  value={model}
-                  title="模型:运行中=热切换(/model,上下文保留);未运行=下次启动默认"
-                  onChange={(e) => changeModel(e.target.value)}
-                >
-                  {MODEL_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-                {sessions.length > 0 && (
-                  <select
-                    className="select"
-                    value=""
-                    title="恢复历史会话"
-                    onChange={(e) => {
-                      const id = e.target.value
-                      if (id) resumeSession(id)
-                    }}
-                  >
-                    <option value="" disabled>
-                      历史会话({sessions.length})
-                    </option>
-                    {sessions.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.title}
-                      </option>
-                    ))}
-                  </select>
-                )}
-                {running && (
-                  <button
-                    className="btn"
-                    title="中断当前任务(Esc),会话保留"
-                    onClick={() => window.cc.ptyInput('\x1b')}
-                  >
-                    中断
-                  </button>
-                )}
-              </>
+              <select
+                className="select"
+                value={model}
+                title="模型:运行中=热切换(/model,上下文保留);未运行=下次启动默认"
+                onChange={(e) => changeModel(e.target.value)}
+              >
+                {MODEL_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
             )}
             {running && (
               <button className="btn danger" title="结束进程" onClick={() => window.cc.stopClaude()}>
