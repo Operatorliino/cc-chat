@@ -17,7 +17,7 @@ let chatView: WebContentsView | null = null
 const pty = new PtyManager()
 
 /** 页面加载后自动点击侧边栏"收起"按钮(启发式:找不到就放弃,不影响使用) */
-function autoCollapseSidebar(view: WebContentsView): void {
+function autoCollapseSidebar(wc: Electron.WebContents): void {
   const script = `(function attempt(n){
     if (n <= 0) return 'giveup'
     const els = Array.from(document.querySelectorAll('button,[role="button"],[aria-label],[title]'))
@@ -32,10 +32,8 @@ function autoCollapseSidebar(view: WebContentsView): void {
   const delays = [1200, 3200]
   for (const d of delays) {
     setTimeout(() => {
-      if (view.webContents.isDestroyed()) return
-      void view.webContents
-        .executeJavaScript(script, true)
-        .catch(() => undefined)
+      if (wc.isDestroyed()) return
+      void wc.executeJavaScript(script, true).catch(() => undefined)
     }, d)
   }
 }
@@ -74,27 +72,30 @@ function createWindow(): void {
 }
 
 function ensureChatView(): WebContentsView {
-  if (!chatView) {
-    chatView = new WebContentsView({
-      webPreferences: {
-        partition: 'persist:chatglm',
-        contextIsolation: true,
-        nodeIntegration: false
-      }
-    })
-    chatView.setBackgroundColor('#ffffff')
-    chatView.webContents.setWindowOpenHandler(({ url }) => {
-      void shell.openExternal(url)
-      return { action: 'deny' }
-    })
-    chatView.webContents.on('did-finish-load', () => {
-      chatView?.webContents.setZoomFactor(CHAT_ZOOM)
-      autoCollapseSidebar(chatView as WebContentsView)
-    })
-    chatView.webContents.setZoomFactor(CHAT_ZOOM)
-    void chatView.webContents.loadURL(loadSettings().chatUrl || DEFAULT_CHAT_URL)
-  }
-  return chatView
+  if (chatView) return chatView
+  const view = new WebContentsView({
+    webPreferences: {
+      partition: 'persist:chatglm',
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  })
+  view.setBackgroundColor('#ffffff')
+  view.webContents.setWindowOpenHandler(({ url }) => {
+    void shell.openExternal(url)
+    return { action: 'deny' }
+  })
+  // 捕获实例本身的 webContents:即使视图稍后被"关闭网页"销毁,回调里调用 isDestroyed() 也是安全的
+  const wc = view.webContents
+  wc.on('did-finish-load', () => {
+    if (wc.isDestroyed()) return
+    wc.setZoomFactor(CHAT_ZOOM)
+    autoCollapseSidebar(wc)
+  })
+  wc.setZoomFactor(CHAT_ZOOM)
+  void wc.loadURL(loadSettings().chatUrl || DEFAULT_CHAT_URL)
+  chatView = view
+  return view
 }
 
 function registerIpc(): void {
