@@ -26,13 +26,6 @@ export default function App(): React.JSX.Element {
   const [chatUrl, setChatUrl] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [model, setModel] = useState('opus')
-  const [draft, setDraft] = useState('')
-
-  const sendDraft = useCallback((): void => {
-    if (!draft.trim()) return
-    window.cc.ptyInput(draft + '\r')
-    setDraft('')
-  }, [draft])
 
   const bodyRef = useRef<HTMLDivElement>(null)
   const chatPlaceholderRef = useRef<HTMLDivElement>(null)
@@ -294,23 +287,6 @@ export default function App(): React.JSX.Element {
             )}
           </div>
           <TerminalPane />
-          <div className="draft-bar">
-            <input
-              className="input"
-              value={draft}
-              placeholder="在这里输入消息(中文输入不漂移),回车发送;终端内直接打字用于 y/n、快捷键"
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
-                  e.preventDefault()
-                  sendDraft()
-                }
-              }}
-            />
-            <button className="btn" onClick={sendDraft}>
-              发送
-            </button>
-          </div>
           {!folder && (
             <div className="term-empty">
               <span className="title">从一个文件夹开始</span>
