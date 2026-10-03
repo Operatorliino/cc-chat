@@ -1,0 +1,4 @@
+onlyBuiltDependencies:
+  - esbuild
+  - electron
+  - '@lydell/node-pty'
