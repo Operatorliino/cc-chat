@@ -7,6 +7,15 @@ type LayoutMode = 'split' | 'chat' | 'term'
 const MIN_RATIO = 0.2
 const MAX_RATIO = 0.8
 
+/** 模型选项:用 CC 别名(sonnet/opus),由 ~/.claude/settings.json 的 ANTHROPIC_DEFAULT_*_MODEL 解析成实际模型 */
+const MODEL_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: 'sonnet', label: 'flash(快)' },
+  { value: 'opus', label: 'v4-pro(强)' }
+]
+
+const normalizeModel = (m: string): string =>
+  m === 'deepseek-chat' ? 'sonnet' : m === 'deepseek-reasoner' ? 'opus' : m
+
 export default function App(): React.JSX.Element {
   const [init, setInit] = useState<InitPayload | null>(null)
   const [layout, setLayout] = useState<LayoutMode>('split')
@@ -16,7 +25,7 @@ export default function App(): React.JSX.Element {
   const [status, setStatus] = useState('选择一个文件夹,启动内嵌 Claude Code;左侧网页聊天处理简单问题。')
   const [chatUrl, setChatUrl] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [model, setModel] = useState('deepseek-chat')
+  const [model, setModel] = useState('opus')
   const [sessions, setSessions] = useState<SessionInfo[]>([])
 
   const bodyRef = useRef<HTMLDivElement>(null)
@@ -77,7 +86,7 @@ export default function App(): React.JSX.Element {
     const picked = await window.cc.pickFolder()
     if (!picked) return
     setFolder(picked)
-    const m = init?.folderModels[picked] ?? 'deepseek-chat'
+    const m = normalizeModel(init?.folderModels[picked] ?? 'opus')
     setModel(m)
     void window.cc.listSessions(picked).then(setSessions)
     const recent = await window.cc.addRecent(picked)
@@ -90,7 +99,7 @@ export default function App(): React.JSX.Element {
   const startRecent = useCallback(
     async (f: string): Promise<void> => {
       setFolder(f)
-      const m = init?.folderModels[f] ?? 'deepseek-chat'
+      const m = normalizeModel(init?.folderModels[f] ?? 'opus')
       setModel(m)
       void window.cc.listSessions(f).then(setSessions)
       setStatus(`正在启动 claude → ${f}`)
@@ -268,11 +277,14 @@ export default function App(): React.JSX.Element {
                 <select
                   className="select"
                   value={model}
-                  title="模型:运行中=热切换(等同 /model,上下文保留);未运行=下次启动默认"
+                  title="模型:运行中=热切换(/model,上下文保留);未运行=下次启动默认"
                   onChange={(e) => changeModel(e.target.value)}
                 >
-                  <option value="deepseek-chat">deepseek-chat</option>
-                  <option value="deepseek-reasoner">deepseek-reasoner</option>
+                  {MODEL_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
                 </select>
                 {sessions.length > 0 && (
                   <select

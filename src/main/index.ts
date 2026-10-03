@@ -10,7 +10,7 @@ const WINDOW_PRESETS: Record<WindowSize, { w: number; h: number; label: string }
   large: { w: 1536, h: 960, label: '大' }
 }
 
-const CHAT_ZOOM = 0.85
+const CHAT_ZOOM = 0.75
 
 let win: BrowserWindow | null = null
 let chatView: WebContentsView | null = null
