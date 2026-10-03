@@ -234,6 +234,15 @@ header {
   padding: 4px 6px;
 }
 
+/* IME 组合串(拼音预览)必须与终端网格字体完全一致,否则度量错位导致漂移 */
+.xterm .xterm-helper-textarea,
+.xterm .composition-view,
+.xterm .composition-view * {
+  font-family: 'Cascadia Mono', Consolas, 'Courier New', monospace !important;
+  font-size: 13px !important;
+  line-height: 18px !important;
+}
+
 .term-empty {
   position: absolute;
   inset: 0;
