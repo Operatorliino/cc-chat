@@ -105,10 +105,15 @@ export default function App(): React.JSX.Element {
       setModel(m)
       if (!folder) return
       void window.cc.setFolderModel(folder, m)
-      setStatus(`切换模型 → ${m},重启 claude(会话上下文不保留)`)
-      void window.cc.startClaude(folder, { model: m })
+      if (running) {
+        // 热切换:把 /model 打进正在运行的 claude,不丢会话上下文
+        window.cc.ptyInput(`/model ${m}\r`)
+        setStatus(`已热切换模型 → ${m}(当前会话上下文保留)`)
+      } else {
+        setStatus(`模型默认 → ${m}(下次启动 claude 生效)`)
+      }
     },
-    [folder]
+    [folder, running]
   )
 
   const resumeSession = useCallback(
@@ -263,7 +268,7 @@ export default function App(): React.JSX.Element {
                 <select
                   className="select"
                   value={model}
-                  title="模型(切换会重启 claude)"
+                  title="模型:运行中=热切换(等同 /model,上下文保留);未运行=下次启动默认"
                   onChange={(e) => changeModel(e.target.value)}
                 >
                   <option value="deepseek-chat">deepseek-chat</option>
