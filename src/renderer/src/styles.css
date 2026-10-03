@@ -234,6 +234,21 @@ header {
   padding: 4px 6px;
 }
 
+.draft-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+  flex: 0 0 auto;
+}
+
+.draft-bar .input {
+  flex: 1;
+  max-width: none;
+}
+
 /* IME 组合串(拼音预览)必须与终端网格字体完全一致,否则度量错位导致漂移 */
 .xterm .xterm-helper-textarea,
 .xterm .composition-view,
