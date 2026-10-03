@@ -164,6 +164,19 @@ function registerIpc(): void {
     })
   })
 
+  ipcMain.on('chat:close', () => {
+    if (!chatView) return
+    if (win && win.contentView.children.includes(chatView)) {
+      win.contentView.removeChildView(chatView)
+    }
+    try {
+      chatView.webContents.close()
+    } catch {
+      /* 已销毁则忽略 */
+    }
+    chatView = null
+  })
+
   ipcMain.handle('store:addRecent', (_e, folder: string) => {
     return addRecentFolder(folder)
   })

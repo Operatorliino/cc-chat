@@ -37,6 +37,7 @@ export interface CcApi {
   setChatUrl(url: string): Promise<{ ok: boolean; message?: string }>
   pickFolder(): Promise<string | null>
   setChatBounds(rect: ChatBounds | null): void
+  closeChat(): void
   addRecent(folder: string): Promise<string[]>
   startClaude(folder: string, opts?: StartClaudeOptions): Promise<{ ok: boolean; message: string }>
   listSessions(folder: string): Promise<SessionInfo[]>

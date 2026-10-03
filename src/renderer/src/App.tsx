@@ -14,9 +14,11 @@ const MODEL_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
 const normalizeModel = (m: string): string =>
   m === 'deepseek-chat' ? 'sonnet' : m === 'deepseek-reasoner' ? 'opus' : m
 
+type WebState = 'closed' | 'open' | 'collapsed'
+
 export default function App(): React.JSX.Element {
   const [init, setInit] = useState<InitPayload | null>(null)
-  const [chatOpen, setChatOpen] = useState(false)
+  const [webState, setWebState] = useState<WebState>('closed')
   const [ratio, setRatio] = useState(0.46)
   const [folder, setFolder] = useState<string | null>(null)
   const [running, setRunning] = useState(false)
@@ -30,15 +32,16 @@ export default function App(): React.JSX.Element {
   const draggingRef = useRef(false)
 
   const syncChatBounds = useCallback((): void => {
-    const placeholder = chatPlaceholderRef.current
-    if (!placeholder) return
-    if (!chatOpen) {
+    // closed = 视图已销毁;collapsed = 视图保留在后台(登录态/页面不丢),仅从窗口分离
+    if (webState !== 'open') {
       window.cc.setChatBounds(null)
       return
     }
+    const placeholder = chatPlaceholderRef.current
+    if (!placeholder) return
     const rect = placeholder.getBoundingClientRect()
     window.cc.setChatBounds({ x: rect.x, y: rect.y, width: rect.width, height: rect.height })
-  }, [chatOpen])
+  }, [webState])
 
   useEffect(() => {
     void window.cc.getInit().then((payload) => {
@@ -62,7 +65,7 @@ export default function App(): React.JSX.Element {
       window.removeEventListener('resize', syncChatBounds)
       ro?.disconnect()
     }
-  }, [syncChatBounds, ratio, chatOpen, settingsOpen])
+  }, [syncChatBounds, ratio, webState, settingsOpen])
 
   useEffect(() => {
     return window.cc.onPty((ev) => {
@@ -148,6 +151,9 @@ export default function App(): React.JSX.Element {
     window.addEventListener('mouseup', onUp)
   }, [])
 
+  const showWeb = webState !== 'closed'
+  const chatWidth = webState === 'open' ? `${ratio * 100}%` : '0'
+
   return (
     <div className="app">
       <header>
@@ -175,9 +181,29 @@ export default function App(): React.JSX.Element {
           </select>
         )}
         <span className="spacer" />
-        <button className="btn" onClick={() => setChatOpen(!chatOpen)}>
-          {chatOpen ? '关闭网页' : '网页窗口'}
-        </button>
+        {webState === 'closed' ? (
+          <button className="btn" onClick={() => setWebState('open')}>
+            网页窗口
+          </button>
+        ) : (
+          <>
+            <button
+              className="btn"
+              onClick={() => setWebState(webState === 'open' ? 'collapsed' : 'open')}
+            >
+              {webState === 'open' ? '收起网页' : '展开网页'}
+            </button>
+            <button
+              className="btn"
+              onClick={() => {
+                window.cc.closeChat()
+                setWebState('closed')
+              }}
+            >
+              关闭网页
+            </button>
+          </>
+        )}
         <button
           className={`btn gear ${settingsOpen ? 'active' : ''}`}
           title="设置"
@@ -224,14 +250,14 @@ export default function App(): React.JSX.Element {
       )}
 
       <div className="body" ref={bodyRef}>
-        {chatOpen && (
+        {showWeb && (
           <>
-            <section className="pane chat-pane" style={{ flexBasis: `${ratio * 100}%` }}>
+            <section className="pane chat-pane" style={{ flexBasis: chatWidth }}>
               <div className="chat-placeholder" ref={chatPlaceholderRef}>
                 <div className="chat-hint">网页聊天加载中…</div>
               </div>
             </section>
-            <div className="divider" onMouseDown={onDividerMouseDown} />
+            {webState === 'open' && <div className="divider" onMouseDown={onDividerMouseDown} />}
           </>
         )}
         <section className="pane term-pane">

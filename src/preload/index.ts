@@ -7,6 +7,7 @@ const api: CcApi = {
   setChatUrl: (url: string) => ipcRenderer.invoke('chat:setUrl', url),
   pickFolder: () => ipcRenderer.invoke('dialog:pickFolder'),
   setChatBounds: (rect: ChatBounds | null) => ipcRenderer.send('chat:bounds', rect),
+  closeChat: () => ipcRenderer.send('chat:close'),
   addRecent: (folder: string) => ipcRenderer.invoke('store:addRecent', folder),
   startClaude: (folder: string, opts?: StartClaudeOptions) =>
     ipcRenderer.invoke('pty:start', { folder, ...opts }),

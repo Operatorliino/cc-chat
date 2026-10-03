@@ -7,6 +7,11 @@ export type PtyEvent =
   | { type: 'error'; message: string }
   | { type: 'started' }
 
+export interface StartOptions {
+  model?: string
+  resumeId?: string
+}
+
 function buildEnv(): Record<string, string> {
   const env: Record<string, string> = {}
   for (const [k, v] of Object.entries(process.env)) {
@@ -37,16 +42,21 @@ function resolveClaude(): Promise<string | null> {
   })
 }
 
-export interface StartOptions {
-  model?: string
-  resumeId?: string
-}
-
 export class PtyManager {
   private proc: nodePty.IPty | null = null
+  private pendingCols: number | undefined
+  private pendingRows: number | undefined
 
   isRunning(): boolean {
     return this.proc !== null
+  }
+
+  /** 渲染进程上报的尺寸随时记录;进程未启动时先存着,spawn 时带上(修复漂移:保证 pty 尺寸 == xterm 尺寸) */
+  resize(cols: number, rows: number): void {
+    if (!Number.isFinite(cols) || !Number.isFinite(rows) || cols <= 0 || rows <= 0) return
+    this.pendingCols = Math.round(cols)
+    this.pendingRows = Math.round(rows)
+    this.proc?.resize(this.pendingCols, this.pendingRows)
   }
 
   async start(
@@ -68,7 +78,9 @@ export class PtyManager {
       const p = nodePty.spawn('cmd.exe', args, {
         name: 'xterm-256color',
         cwd: folder,
-        env: buildEnv()
+        env: buildEnv(),
+        cols: this.pendingCols,
+        rows: this.pendingRows
       })
       this.proc = p
       onEvent({ type: 'started' })
@@ -87,13 +99,6 @@ export class PtyManager {
 
   input(data: string): void {
     this.proc?.write(data)
-  }
-
-  resize(cols: number, rows: number): void {
-    if (!this.proc) return
-    if (Number.isFinite(cols) && Number.isFinite(rows) && cols > 0 && rows > 0) {
-      this.proc.resize(Math.round(cols), Math.round(rows))
-    }
   }
 
   stop(): void {
