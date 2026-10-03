@@ -8,6 +8,7 @@ export interface AppSettings {
   recentFolders: string[]
   windowSize: WindowSize
   chatUrl: string
+  folderModels: Record<string, string>
 }
 
 export const DEFAULT_CHAT_URL = 'https://chatglm.cn/'
@@ -15,7 +16,8 @@ export const DEFAULT_CHAT_URL = 'https://chatglm.cn/'
 const DEFAULTS: AppSettings = {
   recentFolders: [],
   windowSize: 'medium',
-  chatUrl: DEFAULT_CHAT_URL
+  chatUrl: DEFAULT_CHAT_URL,
+  folderModels: {}
 }
 
 function settingsFile(): string {
@@ -42,4 +44,9 @@ export function addRecentFolder(folder: string): string[] {
   const next = [folder, ...s.recentFolders.filter((f) => f !== folder)].slice(0, 8)
   saveSettings({ ...s, recentFolders: next })
   return next
+}
+
+export function setFolderModel(folder: string, model: string): void {
+  const s = loadSettings()
+  saveSettings({ ...s, folderModels: { ...s.folderModels, [folder]: model } })
 }

@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { ChatBounds, CcApi, PtyEvent, WindowSize } from './api'
+import type { ChatBounds, CcApi, PtyEvent, StartClaudeOptions, WindowSize } from './api'
 
 const api: CcApi = {
   getInit: () => ipcRenderer.invoke('app:init'),
@@ -8,7 +8,11 @@ const api: CcApi = {
   pickFolder: () => ipcRenderer.invoke('dialog:pickFolder'),
   setChatBounds: (rect: ChatBounds | null) => ipcRenderer.send('chat:bounds', rect),
   addRecent: (folder: string) => ipcRenderer.invoke('store:addRecent', folder),
-  startClaude: (folder: string) => ipcRenderer.invoke('pty:start', folder),
+  startClaude: (folder: string, opts?: StartClaudeOptions) =>
+    ipcRenderer.invoke('pty:start', { folder, ...opts }),
+  listSessions: (folder: string) => ipcRenderer.invoke('sessions:list', folder),
+  setFolderModel: (folder: string, model: string) =>
+    ipcRenderer.invoke('store:setFolderModel', { folder, model }),
   stopClaude: () => ipcRenderer.send('pty:stop'),
   ptyInput: (data: string) => ipcRenderer.send('pty:input', data),
   ptyResize: (cols: number, rows: number) => ipcRenderer.send('pty:resize', { cols, rows }),

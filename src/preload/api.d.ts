@@ -17,6 +17,18 @@ export interface InitPayload {
   recentFolders: string[]
   windowSize: WindowSize
   chatUrl: string
+  folderModels: Record<string, string>
+}
+
+export interface SessionInfo {
+  id: string
+  title: string
+  mtime: number
+}
+
+export interface StartClaudeOptions {
+  model?: string
+  resumeId?: string
 }
 
 export interface CcApi {
@@ -26,7 +38,9 @@ export interface CcApi {
   pickFolder(): Promise<string | null>
   setChatBounds(rect: ChatBounds | null): void
   addRecent(folder: string): Promise<string[]>
-  startClaude(folder: string): Promise<{ ok: boolean; message: string }>
+  startClaude(folder: string, opts?: StartClaudeOptions): Promise<{ ok: boolean; message: string }>
+  listSessions(folder: string): Promise<SessionInfo[]>
+  setFolderModel(folder: string, model: string): Promise<void>
   stopClaude(): void
   ptyInput(data: string): void
   ptyResize(cols: number, rows: number): void

@@ -37,6 +37,11 @@ function resolveClaude(): Promise<string | null> {
   })
 }
 
+export interface StartOptions {
+  model?: string
+  resumeId?: string
+}
+
 export class PtyManager {
   private proc: nodePty.IPty | null = null
 
@@ -44,7 +49,11 @@ export class PtyManager {
     return this.proc !== null
   }
 
-  async start(folder: string, onEvent: (ev: PtyEvent) => void): Promise<{ ok: boolean; message: string }> {
+  async start(
+    folder: string,
+    opts: StartOptions | undefined,
+    onEvent: (ev: PtyEvent) => void
+  ): Promise<{ ok: boolean; message: string }> {
     if (this.proc) this.stop()
     const claude = await resolveClaude()
     if (!claude) {
@@ -52,8 +61,11 @@ export class PtyManager {
       onEvent({ type: 'error', message: msg })
       return { ok: false, message: msg }
     }
+    const args = ['/c', claude]
+    if (opts?.model) args.push('--model', opts.model)
+    if (opts?.resumeId) args.push('--resume', opts.resumeId)
     try {
-      const p = nodePty.spawn('cmd.exe', ['/c', claude], {
+      const p = nodePty.spawn('cmd.exe', args, {
         name: 'xterm-256color',
         cwd: folder,
         env: buildEnv()

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { TerminalPane } from './components/TerminalPane'
-import type { InitPayload, WindowSize } from '../../preload/api'
+import type { InitPayload, SessionInfo, WindowSize } from '../../preload/api'
 
 type LayoutMode = 'split' | 'chat' | 'term'
 
@@ -15,6 +15,9 @@ export default function App(): React.JSX.Element {
   const [running, setRunning] = useState(false)
   const [status, setStatus] = useState('选择一个文件夹,启动内嵌 Claude Code;左侧网页聊天处理简单问题。')
   const [chatUrl, setChatUrl] = useState('')
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [model, setModel] = useState('deepseek-chat')
+  const [sessions, setSessions] = useState<SessionInfo[]>([])
 
   const bodyRef = useRef<HTMLDivElement>(null)
   const chatPlaceholderRef = useRef<HTMLDivElement>(null)
@@ -38,7 +41,7 @@ export default function App(): React.JSX.Element {
     })
   }, [])
 
-  // 网页视图边界同步:布局/比例变化 + 窗口 resize + 占位元素尺寸观察(双保险)
+  // 网页视图边界同步:布局/比例变化 + 窗口 resize + 占位元素尺寸观察 + 设置条开合
   useEffect(() => {
     const raf = requestAnimationFrame(syncChatBounds)
     window.addEventListener('resize', syncChatBounds)
@@ -53,7 +56,7 @@ export default function App(): React.JSX.Element {
       window.removeEventListener('resize', syncChatBounds)
       ro?.disconnect()
     }
-  }, [syncChatBounds, ratio, layout])
+  }, [syncChatBounds, ratio, layout, settingsOpen])
 
   useEffect(() => {
     return window.cc.onPty((ev) => {
@@ -74,31 +77,53 @@ export default function App(): React.JSX.Element {
     const picked = await window.cc.pickFolder()
     if (!picked) return
     setFolder(picked)
+    const m = init?.folderModels[picked] ?? 'deepseek-chat'
+    setModel(m)
+    void window.cc.listSessions(picked).then(setSessions)
     const recent = await window.cc.addRecent(picked)
     setInit((prev) => (prev ? { ...prev, recentFolders: recent } : prev))
     setStatus(`正在启动 claude → ${picked}`)
-    const result = await window.cc.startClaude(picked)
+    const result = await window.cc.startClaude(picked, { model: m })
     if (!result.ok) setStatus(result.message)
-  }, [])
+  }, [init])
 
-  const startRecent = useCallback(async (f: string): Promise<void> => {
-    setFolder(f)
-    setStatus(`正在启动 claude → ${f}`)
-    const result = await window.cc.startClaude(f)
-    if (!result.ok) setStatus(result.message)
-  }, [])
-
-  const changeWindowSize = useCallback(
-    (size: WindowSize): void => {
-      setInit((prev) => (prev ? { ...prev, windowSize: size } : prev))
-      void window.cc.setWindowSize(size).then(() => {
-        // 主进程 setSize 后渲染进程尺寸更新有延迟,补偿同步两次
-        setTimeout(syncChatBounds, 80)
-        setTimeout(syncChatBounds, 300)
-      })
+  const startRecent = useCallback(
+    async (f: string): Promise<void> => {
+      setFolder(f)
+      const m = init?.folderModels[f] ?? 'deepseek-chat'
+      setModel(m)
+      void window.cc.listSessions(f).then(setSessions)
+      setStatus(`正在启动 claude → ${f}`)
+      const result = await window.cc.startClaude(f, { model: m })
+      if (!result.ok) setStatus(result.message)
     },
-    [syncChatBounds]
+    [init]
   )
+
+  const changeModel = useCallback(
+    (m: string): void => {
+      setModel(m)
+      if (!folder) return
+      void window.cc.setFolderModel(folder, m)
+      setStatus(`切换模型 → ${m},重启 claude(会话上下文不保留)`)
+      void window.cc.startClaude(folder, { model: m })
+    },
+    [folder]
+  )
+
+  const resumeSession = useCallback(
+    (id: string): void => {
+      if (!folder) return
+      setStatus(`恢复会话 ${id.slice(0, 8)}…`)
+      void window.cc.startClaude(folder, { resumeId: id, model })
+    },
+    [folder, model]
+  )
+
+  const changeWindowSize = useCallback((size: WindowSize): void => {
+    setInit((prev) => (prev ? { ...prev, windowSize: size } : prev))
+    void window.cc.setWindowSize(size)
+  }, [])
 
   const applyChatUrl = useCallback((): void => {
     void window.cc.setChatUrl(chatUrl).then((result) => {
@@ -135,7 +160,7 @@ export default function App(): React.JSX.Element {
       <header>
         <span className="logo">CC·Chat</span>
         <button className="btn primary" onClick={() => void pickAndStart()}>
-          选择文件夹并启动 Claude Code
+          启动 Claude Code
         </button>
         {init && init.recentFolders.length > 0 && (
           <select
@@ -147,7 +172,7 @@ export default function App(): React.JSX.Element {
             }}
           >
             <option value="" disabled>
-              最近文件夹
+              最近
             </option>
             {init.recentFolders.map((f) => (
               <option key={f} value={f}>
@@ -157,23 +182,12 @@ export default function App(): React.JSX.Element {
           </select>
         )}
         <span className="spacer" />
-        {init && (
-          <select
-            className="select"
-            value={init.windowSize}
-            onChange={(e) => changeWindowSize(e.target.value as WindowSize)}
-          >
-            <option value="small">窗口:小</option>
-            <option value="medium">窗口:中</option>
-            <option value="large">窗口:大</option>
-          </select>
-        )}
         <div className="layout-toggle">
           {(
             [
               ['split', '双栏'],
-              ['chat', '仅聊天'],
-              ['term', '仅终端']
+              ['chat', '聊天'],
+              ['term', '终端']
             ] as const
           ).map(([mode, label]) => (
             <button
@@ -185,7 +199,47 @@ export default function App(): React.JSX.Element {
             </button>
           ))}
         </div>
+        <button
+          className={`btn gear ${settingsOpen ? 'active' : ''}`}
+          title="设置"
+          onClick={() => setSettingsOpen(!settingsOpen)}
+        >
+          ⚙
+        </button>
       </header>
+
+      {settingsOpen && (
+        <div className="settings-strip">
+          <label>
+            窗口
+            <select
+              className="select"
+              value={init?.windowSize ?? 'medium'}
+              onChange={(e) => changeWindowSize(e.target.value as WindowSize)}
+            >
+              <option value="small">小</option>
+              <option value="medium">中</option>
+              <option value="large">大</option>
+            </select>
+          </label>
+          <label className="grow">
+            聊天页 URL
+            <input
+              className="input"
+              value={chatUrl}
+              onChange={(e) => setChatUrl(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') applyChatUrl()
+              }}
+              placeholder="https://chatglm.cn"
+            />
+          </label>
+          <button className="btn" onClick={applyChatUrl}>
+            应用
+          </button>
+          <span className="settings-note">登录状态按域名分别记忆,改 URL 不影响已登录的站</span>
+        </div>
+      )}
 
       <div className="body" ref={bodyRef}>
         <section
@@ -202,32 +256,67 @@ export default function App(): React.JSX.Element {
             <span className="cwd" title={folder ?? ''}>
               {folder ?? '未选择文件夹'}
             </span>
-            <span className="pill">{running ? '● 运行中' : '○ 未运行'}</span>
+            <span className={`pill ${running ? 'on' : ''}`}>{running ? '运行中' : '未运行'}</span>
+            <span className="spacer" />
+            {folder && (
+              <>
+                <select
+                  className="select"
+                  value={model}
+                  title="模型(切换会重启 claude)"
+                  onChange={(e) => changeModel(e.target.value)}
+                >
+                  <option value="deepseek-chat">deepseek-chat</option>
+                  <option value="deepseek-reasoner">deepseek-reasoner</option>
+                </select>
+                {sessions.length > 0 && (
+                  <select
+                    className="select"
+                    value=""
+                    title="恢复历史会话"
+                    onChange={(e) => {
+                      const id = e.target.value
+                      if (id) resumeSession(id)
+                    }}
+                  >
+                    <option value="" disabled>
+                      历史会话({sessions.length})
+                    </option>
+                    {sessions.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.title}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {running && (
+                  <button
+                    className="btn"
+                    title="中断当前任务(Esc),会话保留"
+                    onClick={() => window.cc.ptyInput('\x1b')}
+                  >
+                    中断
+                  </button>
+                )}
+              </>
+            )}
             {running && (
-              <button className="btn danger" onClick={() => window.cc.stopClaude()}>
-                停止
+              <button className="btn danger" title="结束进程" onClick={() => window.cc.stopClaude()}>
+                退出
               </button>
             )}
           </div>
           <TerminalPane />
+          {!folder && (
+            <div className="term-empty">
+              <span className="title">从一个文件夹开始</span>
+              <span>点击上方"启动 Claude Code",内嵌终端会自动运行</span>
+            </div>
+          )}
         </section>
       </div>
 
-      <footer>
-        <span className="footer-status">{status}</span>
-        <input
-          className="input url-input"
-          placeholder="聊天页 URL(https://chatglm.cn)"
-          value={chatUrl}
-          onChange={(e) => setChatUrl(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') applyChatUrl()
-          }}
-        />
-        <button className="btn" onClick={applyChatUrl}>
-          打开
-        </button>
-      </footer>
+      <footer>{status}</footer>
     </div>
   )
 }

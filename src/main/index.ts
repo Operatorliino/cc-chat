@@ -1,13 +1,16 @@
 import { app, BrowserWindow, dialog, ipcMain, shell, WebContentsView } from 'electron'
 import { join } from 'node:path'
-import { addRecentFolder, loadSettings, saveSettings, DEFAULT_CHAT_URL, type WindowSize } from './store'
-import { PtyManager } from './pty'
+import { addRecentFolder, loadSettings, saveSettings, setFolderModel, DEFAULT_CHAT_URL, type WindowSize } from './store'
+import { PtyManager, type PtyEvent } from './pty'
+import { listSessions } from './sessions'
 
 const WINDOW_PRESETS: Record<WindowSize, { w: number; h: number; label: string }> = {
   small: { w: 1100, h: 720, label: '小' },
   medium: { w: 1280, h: 800, label: '中' },
   large: { w: 1536, h: 960, label: '大' }
 }
+
+const CHAT_ZOOM = 0.85
 
 let win: BrowserWindow | null = null
 let chatView: WebContentsView | null = null
@@ -84,7 +87,11 @@ function ensureChatView(): WebContentsView {
       void shell.openExternal(url)
       return { action: 'deny' }
     })
-    chatView.webContents.on('did-finish-load', () => autoCollapseSidebar(chatView as WebContentsView))
+    chatView.webContents.on('did-finish-load', () => {
+      chatView?.webContents.setZoomFactor(CHAT_ZOOM)
+      autoCollapseSidebar(chatView as WebContentsView)
+    })
+    chatView.webContents.setZoomFactor(CHAT_ZOOM)
     void chatView.webContents.loadURL(loadSettings().chatUrl || DEFAULT_CHAT_URL)
   }
   return chatView
@@ -93,7 +100,21 @@ function ensureChatView(): WebContentsView {
 function registerIpc(): void {
   ipcMain.handle('app:init', () => {
     const s = loadSettings()
-    return { recentFolders: s.recentFolders, windowSize: s.windowSize, chatUrl: s.chatUrl }
+    return {
+      recentFolders: s.recentFolders,
+      windowSize: s.windowSize,
+      chatUrl: s.chatUrl,
+      folderModels: s.folderModels
+    }
+  })
+
+  ipcMain.handle('sessions:list', (_e, folder: string) => {
+    return listSessions(folder)
+  })
+
+  ipcMain.handle('store:setFolderModel', (_e, payload: { folder: string; model: string }) => {
+    setFolderModel(payload.folder, payload.model)
+    return { ok: true }
   })
 
   ipcMain.handle('chat:setUrl', (_e, url: string) => {
@@ -147,13 +168,20 @@ function registerIpc(): void {
     return addRecentFolder(folder)
   })
 
-  const emit = (ev: Parameters<Parameters<PtyManager['start']>[1]>[0]): void => {
+  const emit = (ev: PtyEvent): void => {
     void win?.webContents.send('pty:event', ev)
   }
 
-  ipcMain.handle('pty:start', async (_e, folder: string) => {
-    return pty.start(folder, emit)
-  })
+  ipcMain.handle(
+    'pty:start',
+    (_e, payload: { folder: string; model?: string; resumeId?: string }) => {
+      return pty.start(
+        payload.folder,
+        { model: payload.model, resumeId: payload.resumeId },
+        emit
+      )
+    }
+  )
 
   ipcMain.on('pty:input', (_e, data: string) => {
     pty.input(data)
